@@ -1,0 +1,45 @@
+name: Trigger auto deployment for fastapi-lab-student09
+
+# When this action will be executed
+on:
+  # Automatically trigger it when detected changes in repo
+  push:
+    branches: 
+      [ main ]
+    paths:
+    - '**'
+    - '.github/workflows/fastapi-lab-student09-AutoDeployTrigger-0527d510-24a8-4a0b-9fd4-0eb8558e6cde.yml'
+
+  # Allow manual trigger 
+  workflow_dispatch:
+      
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout to the branch
+        uses: actions/checkout@v2
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.FASTAPILABSTUDENT09_AZURE_CREDENTIALS }}
+
+      - name: Build and push container image to registry
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          appSourcePath: ${{ github.workspace }}
+          _dockerfilePathKey_: _dockerfilePath_
+          _targetLabelKey_: _targetLabel_
+          registryUrl: cab722bc8e16acr.azurecr.io
+          registryUsername: ${{ secrets.FASTAPILABSTUDENT09_REGISTRY_USERNAME }}
+          registryPassword: ${{ secrets.FASTAPILABSTUDENT09_REGISTRY_PASSWORD }}
+          containerAppName: fastapi-lab-student09
+          resourceGroup: rg-fastapi-lab
+          imageToBuild: cab722bc8e16acr.azurecr.io/fastapi-lab-student09:${{ github.sha }}
+          
+            
+
+     
+
