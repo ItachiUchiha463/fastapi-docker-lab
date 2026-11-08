@@ -4,15 +4,15 @@ name: Trigger auto deployment for fastapi-lab-student09
 on:
   # Automatically trigger it when detected changes in repo
   push:
-    branches: 
+    branches:
       [ main ]
     paths:
     - '**'
     - '.github/workflows/fastapi-lab-student09-AutoDeployTrigger-0527d510-24a8-4a0b-9fd4-0eb8558e6cde.yml'
 
-  # Allow manual trigger 
+  # Allow manual trigger
   workflow_dispatch:
-      
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -38,8 +38,3 @@ jobs:
           containerAppName: fastapi-lab-student09
           resourceGroup: rg-fastapi-lab
           imageToBuild: cab722bc8e16acr.azurecr.io/fastapi-lab-student09:${{ github.sha }}
-          
-            
-
-     
-
