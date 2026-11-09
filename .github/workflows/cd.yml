@@ -1,0 +1,141 @@
+name: FastAPI CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Куди розгортати?"
+        required: true
+        type: choice
+        options:
+          - google
+          - azure
+      image_tag:
+        description: "Тег із GHCR після успішного CI: sha-<40 символів>"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: hpk-production-deployment
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - name: Validate tag and create image URL
+        id: image
+        env:
+          TAG: ${{ inputs.image_tag }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          if [[ ! "$TAG" =~ ^sha-[0-9a-f]{40}$ ]]; then
+            echo "Error: expected sha- followed by 40 lowercase hex characters"
+            exit 1
+          fi
+          REPOSITORY=$(echo "$REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          echo "image=ghcr.io/$REPOSITORY:$TAG" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      service_url: ${{ steps.endpoint.outputs.url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Виконується тільки для Azure Container Apps
+      - name: Authenticate to Azure (OIDC)
+        if: inputs.platform == 'azure'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Container Apps
+        if: inputs.platform == 'azure'
+        env:
+          IMAGE: ${{ needs.validate.outputs.image }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          APP: ${{ vars.AZURE_CONTAINER_APP }}
+        shell: bash
+        run: |
+          az extension add --name containerapp --upgrade
+          az containerapp update \
+            --name "$APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$IMAGE" \
+            --cpu 0.5 \
+            --memory 1.0Gi \
+            --min-replicas 0 \
+            --max-replicas 2
+
+      - name: Obtain deployed service URL
+        id: endpoint
+        env:
+          PLATFORM: ${{ inputs.platform }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          GCP_SERVICE: ${{ vars.GCP_SERVICE }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_CONTAINER_APP: ${{ vars.AZURE_CONTAINER_APP }}
+        shell: bash
+        run: |
+          if [[ "$PLATFORM" == "google" ]]; then
+            URL=$(gcloud run services describe "$GCP_SERVICE" \
+              --region "$GCP_REGION" \
+              --format='value(status.url)')
+          else
+            FQDN=$(az containerapp show \
+              --name "$AZURE_CONTAINER_APP" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --query "properties.configuration.ingress.fqdn" \
+              --output tsv)
+            URL="https://$FQDN"
+          fi
+          if [[ ! "$URL" =~ ^https://.+ ]]; then
+            echo "Could not obtain public HTTPS URL"
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+  smoke:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify health endpoint and JSON response
+        env:
+          SERVICE_URL: ${{ needs.deploy.outputs.service_url }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from urllib.request import urlopen
+
+          url = os.environ["SERVICE_URL"].rstrip("/") + "/health"
+
+          for attempt in range(1, 7):
+              try:
+                  with urlopen(url, timeout=15) as response:
+                      data = json.load(response)
+                      assert response.status == 200
+                      assert data["status"] == "ok"
+                  print(f"Smoke test passed: {url}")
+                  break
+              except Exception as exc:
+                  print(f"Attempt {attempt}/6 failed: {exc}")
+                  if attempt == 6:
+                      raise
+                  time.sleep(5)
+          PY
