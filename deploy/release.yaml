@@ -1,0 +1,36 @@
+app: hpk-fastapi
+environment: production
+
+image:
+  registry: ghcr.io
+  repository: https://github.com/ItachiUchiha463/fastapi-docker-lab
+  tag: sha-861339a277429606b1df818acbe81f63257e8c0d
+
+container:
+  port: 8000
+
+health:
+  path: /health
+
+strategy:
+  type: canary
+  stages: [0, 10, 50, 100]
+
+platforms:
+  google_cloud_run:
+    region: westeurope
+    resources:
+      cpu: "0,5"
+      memory: 1GiB
+    scaling:
+      min_instances: 0
+      max_instances: 2
+
+  azure_container_apps:
+    region: westeurope
+    resources:
+      cpu: 0.5
+      memory: 1Gi
+    scaling:
+      min_replicas: 0
+      max_replicas: 2
