@@ -5,7 +5,7 @@ from fastapi import FastAPI
 app = FastAPI(title="Cloud Containers Lab", version="1.0")
 
 
-# njsdfnjsпіфafsgEASVAADAпфі
+# njsdfnjsпіфafsgEASVAADAфпфіпфвіаііваі
 
 
 @app.get("/")
