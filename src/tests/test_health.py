@@ -6,12 +6,12 @@ client = TestClient(app)
 
 
 def test_healthcheck_status():
-    response = client.get("/common/healthcheck")
+    response = client.get("/health")
     assert response.status_code == 200
 
 
 def test_healthcheck_body():
-    response = client.get("/common/healthcheck")
+    response = client.get("/health")
     data = response.json()
     assert data["status"] == "ok"
 
